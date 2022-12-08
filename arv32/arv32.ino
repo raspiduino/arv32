@@ -88,7 +88,7 @@ void setup() {
   Serial.println(F("initialization done."));
 
   // Open RAM file
-  vram = SD.open(RAM_FILE, FILE_READ | FILE_WRITE);
+  vram = SD.open(RAM_FILE, O_RDWR);
 
   if (!vram) {
     Serial.print(F(RAM_FILE));
@@ -195,18 +195,22 @@ static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
 static UInt32 store4(UInt32 ofs, UInt32 val) {
   vram.seek(ofs);
 
-  vram.write(((UInt8 *)&val)[0]);
-  vram.write(((UInt8 *)&val)[1]);
-  vram.write(((UInt8 *)&val)[2]);
-  vram.write(((UInt8 *)&val)[3]);
+  UInt32 r = val;
+
+  vram.write(((UInt8 *)&r)[0]);
+  vram.write(((UInt8 *)&r)[1]);
+  vram.write(((UInt8 *)&r)[2]);
+  vram.write(((UInt8 *)&r)[3]);
   return val;
 }
 
 static UInt16 store2(UInt32 ofs, UInt16 val) {
   vram.seek(ofs);
 
-  vram.write(((UInt8 *)&val)[0]);
-  vram.write(((UInt8 *)&val)[1]);
+  UInt16 r = val;
+
+  vram.write(((UInt8 *)&r)[0]);
+  vram.write(((UInt8 *)&r)[1]);
   return val;
 }
 

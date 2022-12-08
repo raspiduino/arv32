@@ -97,7 +97,7 @@ struct MiniRV32IMAState
   UInt32 extraflags; 
 };
 
-MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * image, UInt32 vProcAddress, UInt32 elapsedUs, int count );
+MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * image, UInt32 vProcAddress, UInt32 elapsedUs, UInt32 count );
 
 #ifdef MINIRV32_IMPLEMENTATION
 
@@ -106,7 +106,7 @@ MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * 
 #define REG( x ) state.regs[x]
 #define REGSET( x, val ) { state.regs[x] = val; }
 
-MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * image, UInt32 vProcAddress, UInt32 elapsedUs, int count )
+MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * image, UInt32 vProcAddress, UInt32 elapsedUs, UInt32 count )
 {
   UInt32 new_timer = CSR( timerl ) + elapsedUs;
   if( new_timer < CSR( timerl ) ) CSR( timerh )++;
@@ -125,7 +125,7 @@ MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * 
   if( CSR( extraflags ) & 4 )
     return 1;
 
-  int icount;
+  UInt32 icount;
 
   for( icount = 0; icount < count; icount++ )
   {
@@ -326,10 +326,10 @@ MINIRV32_DECORATE Int32 MiniRV32IMAStep( struct MiniRV32IMAState state, UInt8 * 
         case 0b1110011: // Zifencei+Zicsr
         {
           UInt32 csrno = ir >> 20;
-          int microop = ( ir >> 12 ) & 0b111;
+          Int32 microop = ( ir >> 12 ) & 0b111;
           if( (microop & 3) ) // It's a Zicsr function.
           {
-            int rs1imm = (ir >> 15) & 0x1f;
+            Int32 rs1imm = (ir >> 15) & 0x1f;
             UInt32 rs1 = REG(rs1imm);
             UInt32 writeval = rs1;
 
