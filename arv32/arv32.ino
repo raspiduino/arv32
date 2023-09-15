@@ -1,7 +1,7 @@
 /*
  * Arv32: Linux on mini-rv32ima emulator on Arduino Platform
  * mini-rv32ima is written by Charles Lohr
- * Ported to Arduino UNO by Giang Vinh Loc
+ * Ported to Arduino UNO by gvl610
  */
 
 // Standard Arduino libraries
@@ -33,7 +33,7 @@ static UInt16 load2(UInt32 ofs);
 static UInt8 load1(UInt32 ofs);
 
 // Config
-#define CS_PIN 10                 // SD card chip select pin
+#define CS_PIN 4                 // SD card chip select pin
 #define RAM_FILE "rv32.bin"       // RAM file on SD card
 const UInt32 RAM_SIZE = 12582912; // Minimum RAM amount (in bytes), just tested (may reduce further by custom kernel)
 #define DTB_SIZE 1536             // DTB size (in bytes), must recount manually each time DTB changes
@@ -57,13 +57,15 @@ const UInt32 RAM_SIZE = 12582912; // Minimum RAM amount (in bytes), just tested 
 #define MINIRV32_STORE2( ofs, val ) store2(ofs, val)
 #define MINIRV32_STORE1( ofs, val ) store1(ofs, val)
 #define MINIRV32_LOAD4( ofs ) load4(ofs)
+#define MINIRV32_LOAD2_SIGNED( ofs ) (Int8)load2(ofs)
 #define MINIRV32_LOAD2( ofs ) load2(ofs)
+#define MINIRV32_LOAD1_SIGNED( ofs ) (Int8)load1(ofs)
 #define MINIRV32_LOAD1( ofs ) load1(ofs)
 
 // Internal headers
-#include "rv32ima.h" // rv32ima emulator
+#include "mini-rv32ima.h" // mini-rv32ima emulator
 
-struct MiniRV32IMAState core;
+struct MiniRV32IMAState *core;
 
 // Setup function
 void setup() {
@@ -85,7 +87,7 @@ void setup() {
     while (1);
   }
   
-  Serial.println(F("initialization done."));
+  Serial.println(F("initialization done!"));
 
   // Open RAM file
   vram = SD.open(RAM_FILE, O_RDWR);
@@ -94,6 +96,9 @@ void setup() {
     Serial.print(F(RAM_FILE));
     Serial.println(F(" failed to open! Halting!"));
   }
+  
+  // Malloc core struct
+  core = (struct MiniRV32IMAState*)malloc(sizeof(struct MiniRV32IMAState));
 
   // Calculate variables
   corebase = RAM_SIZE - sizeof(struct MiniRV32IMAState); // Base address of core struct
@@ -101,20 +106,20 @@ void setup() {
 
   // Clear the struct
   for (int i = 0; i < coresize32; i++) {
-    *(UInt32*)((UInt8*)&core + 4*i) = 0;
+    *(UInt32*)((UInt8*)core + 4*i) = 0;
   }
 
   // Setup core
-  core.pc = MINIRV32_RAM_IMAGE_OFFSET;
-  core.regs[10] = 0x00; //hart ID
-  core.regs[11] = corebase - DTB_SIZE + MINIRV32_RAM_IMAGE_OFFSET; // dtb_pa (Must be valid pointer) (Should be pointer to dtb)
-  core.extraflags |= 3; // Machine-mode.
+  core->pc = MINIRV32_RAM_IMAGE_OFFSET;
+  core->regs[10] = 0x00; //hart ID
+  core->regs[11] = corebase - DTB_SIZE + MINIRV32_RAM_IMAGE_OFFSET; // dtb_pa (Must be valid pointer) (Should be pointer to dtb)
+  core->extraflags |= 3; // Machine-mode.
 }
 
 // Loop function
 void loop() {
   // Emulator cycle
-  uint64_t * this_ccount = ((uint64_t*)&core.cyclel);
+  uint64_t * this_ccount = ((uint64_t*)&core->cyclel);
   UInt32 elapsedUs = 0;
   elapsedUs = *this_ccount / TIME_DIVISOR - lastTime;
   lastTime += elapsedUs;
@@ -191,8 +196,16 @@ static void HandleOtherCSRWrite( UInt8 * image, UInt16 csrno, UInt32 value )
   }*/
 }
 
+//#define MEM_DEBUG
 // Memory access functions
 static UInt32 store4(UInt32 ofs, UInt32 val) {
+#ifdef MEM_DEBUG
+  Serial.print("store4 ");
+  Serial.print(ofs, HEX);
+  Serial.print(", ");
+  Serial.print(val, HEX);
+  Serial.println();
+#endif
   vram.seek(ofs);
 
   UInt32 r = val;
@@ -205,6 +218,13 @@ static UInt32 store4(UInt32 ofs, UInt32 val) {
 }
 
 static UInt16 store2(UInt32 ofs, UInt16 val) {
+#ifdef MEM_DEBUG
+  Serial.print("store2 ");
+  Serial.print(ofs, HEX);
+  Serial.print(", ");
+  Serial.print(val, HEX);
+  Serial.println();
+#endif
   vram.seek(ofs);
 
   UInt16 r = val;
@@ -215,13 +235,40 @@ static UInt16 store2(UInt32 ofs, UInt16 val) {
 }
 
 static UInt8 store1(UInt32 ofs, UInt8 val) {
+#ifdef MEM_DEBUG
+  Serial.print("store1 ");
+  Serial.print(ofs, HEX);
+  Serial.print(", ");
+  Serial.print(val, HEX);
+  Serial.println();
+#endif
   vram.seek(ofs);
 
   vram.write(val);
   return val;
 }
 
+//int bc = 0;
 static UInt32 load4(UInt32 ofs) {
+  static int dh = 0;
+#ifdef MEM_DEBUG
+  Serial.print("load4 ");
+  Serial.print(ofs, HEX);
+  Serial.print(" -> ");
+#endif
+
+  if (ofs == 0xB8) {
+    // Skip memory clean
+    Serial.println("Currently at 0xB8");
+    if (dh == 1) {while(1);}
+    dh = 1;
+    return 0xFEE6DCE3;
+  } else if (ofs == 0x152BC0) {
+    //bc++;
+    //if (bc >= 39)
+      //Serial.println("Currently at 0x152BC0. Stop.");
+  }
+
   vram.seek(ofs);
 
   UInt32 result;
@@ -229,17 +276,40 @@ static UInt32 load4(UInt32 ofs) {
   ((UInt8 *)&result)[1] = vram.read();
   ((UInt8 *)&result)[2] = vram.read();
   ((UInt8 *)&result)[3] = vram.read(); // MSB
+#ifdef MEM_DEBUG
+  Serial.print(result, HEX);
+  Serial.println();
+#endif
   return result;
 }
 static UInt16 load2(UInt32 ofs) {
+#ifdef MEM_DEBUG
+  Serial.print("load2 ");
+  Serial.print(ofs, HEX);
+  Serial.print(" -> ");
+#endif
   vram.seek(ofs);
   
   UInt16 result;
   ((UInt8 *)&result)[0] = vram.read(); // LSB
   ((UInt8 *)&result)[1] = vram.read(); // MSB
+#ifdef MEM_DEBUG
+  Serial.print(result, HEX);
+  Serial.println();
+#endif
   return result;
 }
 static UInt8 load1(UInt32 ofs) {
+#ifdef MEM_DEBUG
+  Serial.print("load1 ");
+  Serial.print(ofs, HEX);
+  Serial.print(" -> ");
+#endif
   vram.seek(ofs);
-  return vram.read();
+  UInt8 result = vram.read();
+#ifdef MEM_DEBUG
+  Serial.print(result, HEX);
+  Serial.println();
+#endif
+  return result;
 }
